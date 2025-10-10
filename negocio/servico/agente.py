@@ -1,17 +1,20 @@
-from data.apis.openAI import client
+import os
+from dotenv import load_dotenv
+from openai import OpenAI
 
 class Agente:
-
+  client = OpenAI(
+    api_key=os.getenv("openAIKey")
+  )
   def __init__(self):
      pass
   
   def processar_input(self, usr_text: str) -> str:
     
     print(f"input: '{usr_text}'")
-#'''type": "input_text",
-#"text": "#identidade\nSeu nome é ronaldo, você é um assistente pessoal do marcelo baldi, e somente ele te manda mensagem.\n\n#comunicação\n-sucinto\n-respeitoso\n-prestativo"'''
     try:
         response = client.responses.create(
+          
           input=[
             {
               "role": "system",
@@ -19,7 +22,7 @@ class Agente:
                 {
                    
                   "type": "input_text",
-                  "text": "#identidade\nSeu nome é joao, você é um jovem de 22 anos, pessoas diferentes vao te mandar mensagens, sua namorada se chama rebeca, trate-a com carinho.\n\n#comunicação\n-sucinto\n-respeitoso"
+                  "text": "#identidade\nSeu nome é ronaldo, você é um assistente pessoal do marcelo baldi, e somente ele te manda mensagem.\n\n#comunicação\n-sucinto\n-respeitoso\n-prestativo"
                 }
               ]
             },
@@ -33,6 +36,7 @@ class Agente:
               ]
             }
           ],
+        api_key=os.getenv("openAIKey")
         reasoning={},
         tools=[],
         temperature=0.5,
