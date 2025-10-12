@@ -1,9 +1,9 @@
 import os
 from dotenv import load_dotenv
 
-load_dotenv
+load_dotenv()
 
-_GPT_KEY = os.getenv('openAIKey')
+_GPT_KEY = os.getenv("openAIKey")
 
-def get_key():
+def get_key() -> str:
     return _GPT_KEY 

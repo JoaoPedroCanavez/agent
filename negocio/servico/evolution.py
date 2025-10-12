@@ -13,29 +13,33 @@ class EvoConnection:
         self.EVO_TOKEN = evo.get_token()
 
     async def processar_webhook(self, data: dict):
-        if 'messages' not in data or not data['messages']:
-            logger.info("Nenhuma mensagem encontrada para processamento no webhook.")
-            return {"status": "ok", "message": "Nenhuma mensagem encontrada para processamento."}
-        
-        for message in data['messages']:
-            
-            if message.get('key', {}).get('fromMe', False):
-                logger.debug("Mensagem ignorada: enviada pela própria instância (fromMe=True).")
-                continue
-            
-            usr_text = message.get('message', {}).get('conversation') or \
-                        message.get('message', {}).get('extendedTextMessage', {}).get('text')
-            
-            numero = message.get('key', {}).get('remoteJid', '')       
-            f_numero = numero.split('@')[0]
-            
-            if usr_text:
-                logger.info(f"Mensagem de texto recebida. De: {f_numero}. Texto: '{usr_text[:50]}...'")
-                return {'Mensagem': usr_text, 'Numero': f_numero}
+    # Verifica se a chave 'data' (que contem a mensagem) existe
+        if 'data' not in data:
+            logger.warning("Payload do webhook recebido sem a chave     'data'.")
+            return {"status": "ok", "message": "Payload malformado."}
 
-        logger.info("Nenhuma mensagem de texto válida encontrada no payload.")
-        return {"status": "ok", "message": "Nenhuma mensagem de texto válida para processamento."}
+    # A mensagem em si é o dicionário aninhado em 'data'
+        message = data['data'] 
     
+    # 1. Filtra mensagens de SAÍDA (fromMe=True)
+        if message.get('key', {}).get('fromMe', False):
+            logger.debug("Mensagem ignorada: enviada pela própria instância (fromMe=True).")
+            return {"status": "ok", "message": "Mensagem de saída ignorada."}   
+
+        usr_text = message.get('message', {}).get('conversation') or \
+                message.get('message', {}).get('extendedTextMessage', {}).get('text')
+    
+        if not usr_text:
+            logger.info("Mensagem ignorada: não é um texto simples.")
+            return {"status": "ok", "message": "Não é uma mensagem de texto."}
+
+        numero = message.get('key', {}).get('remoteJid', '')       
+        f_numero = numero.split('@')[0]
+    
+
+        logger.info(f"Mensagem de texto recebida. De: {f_numero}. Texto: '{usr_text[:50]}...'")
+        return {'Mensagem': usr_text, 'Numero': f_numero}
+
     
     def enviar_resposta(self, numero: str, resposta: str):
 

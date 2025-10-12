@@ -1,30 +1,24 @@
-
+import logging
 from openai import OpenAI
-from data.apis import ope
+
+
+logger = logging.getLogger(__name__)
 
 class Agente:
 
-  def __init__(self):
-    self.client =  OpenAI(api_key=ope.get_key())
+  def __init__(self, key):
+    self.client =  OpenAI(api_key=key)
   
-  def processar_input(self, usr_text: str) -> str:
+  def processar_input(self, usr_text: str, instrucoes = str) -> str:
     
-    print(f"input: '{usr_text}'")
+    logger.info(f"Input do Usuário para o Agente: '{usr_text}'")
     try:
-      system_instruction = (
-        "#identidade\n"
-        "Seu nome é ronaldo, você é um assistente pessoal do marcelo baldi, "
-        "e somente ele te manda mensagem.\n\n"
-        "#comunicação\n"
-        "-sucinto\n-respeitoso\n-prestativo"
-      )
-
       messages = [
-          {"role": "system", "content": system_instruction},
+          {"role": "system", "content": instrucoes},
           {"role": "user", "content": usr_text}
       ]
     
-      print(f"input: '{usr_text}'")
+      logger.debug(f"Enviando para GPT-4o-mini com prompt: '{usr_text}'")
     
       response = self.client.chat.completions.create(
           model="gpt-4o-mini", 
@@ -35,8 +29,9 @@ class Agente:
         )
       
       resposta_do_agente = response.choices[0].message.content
+      logger.info("Resposta da OpenAI recebida com sucesso.")
       return resposta_do_agente
 
     except Exception as e:
-      print(f"Erro ao chamar o Agente OpenAI: {e}")
+      logger.error(f"Erro ao chamar o Agente OpenAI: {e}", exc_info=True)
       return "Desculpe, Marcelo, tive um problema para processar sua solicitação agora. Por favor, tente novamente mais tarde."
