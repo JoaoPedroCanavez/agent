@@ -4,24 +4,13 @@ import json
 import uvicorn
 from dotenv import load_dotenv
 from negocio.servico.agente import Agente
-from data.apis.evolution import EvoConnection 
+from negocio.servico.evolution import EvoConnection 
 from fastapi import FastAPI, Request, HTTPException
-
-load_dotenv()
-
-EVO_URL = os.getenv("evoURL")
-EVO_INSTANCIA = os.getenv("evoIns")
-EVO_TOKEN = os.getenv("evoToken")
 
 agente_ronaldo = Agente()
 
 try:
-    evo_connector = EvoConnection(
-        evoURL=EVO_URL,
-        evoIns=EVO_INSTANCIA,
-        evoToken=EVO_TOKEN,
-        agente_instancia=agente_ronaldo
-    )
+    evo_connector = EvoConnection()
 except Exception as e:
     print(f"Erro ao inicializar EvoConnection: {e}")
     exit()
@@ -35,12 +24,12 @@ def read_root():
 async def evolution_webhook(request: Request):
     try:
         data = await request.json()
-        return await evo_connector.processar_webhook(data)
-    
+        data = await evo_connector.processar_webhook(data)
+        resposta = agente_ronaldo.processar_input(data.get('Mensagem'))
+        evo_connector.enviar_resposta(data.get('Numero'),resposta)  
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Corpo da requisição inválido (JSON esperado).")
     except Exception as e:
-
         print(f"Erro na camada principal do Webhook: {e}")
         raise HTTPException(status_code=500, detail="Erro interno do servidor.")
 

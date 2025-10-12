@@ -1,13 +1,11 @@
+
 from openai import OpenAI
-from dotenv import load_dotenv
-import os
+from data.apis import ope
 
 class Agente:
-  load_dotenv
-  gptkey = os.getenv('openAIKey')
-  client =  OpenAI(api_key=gptkey)
+
   def __init__(self):
-     pass
+    self.client =  OpenAI(api_key=ope.get_key())
   
   def processar_input(self, usr_text: str) -> str:
     
