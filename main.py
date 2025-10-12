@@ -6,6 +6,7 @@ from negocio.servico.db import Banco
 from negocio.servico import a_instrucoes
 from negocio.servico.agente import Agente
 from negocio.servico.evolution import EvoConnection 
+from negocio.servico.processador_midia import ProcessadorDeMidia
 from fastapi import FastAPI, Request, HTTPException
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -27,6 +28,12 @@ try:
     evo_connector = EvoConnection()
 except Exception as e:
     logger.error(f"Erro ao inicializar EvoConnection: {e}")
+    exit()
+
+try:
+    processador_midia = ProcessadorDeMidia(agente_ronaldo.client) 
+except Exception as e:
+    logger.error(f"Erro ao inicializar ProcessadorDeMidia: {e}")
     exit()
 
 app = FastAPI()
@@ -53,21 +60,29 @@ async def evolution_webhook(request: Request):
         if id_usuario is None:
              logger.error("Falha ao obter ou criar ID do usuário no Supabase.")
              return {"status": "error", "message": "Falha na base de dados."}
-        
+
+        # 1. Lógica de Processamento de Mídia
         if mensagem_tipo == 'text':
             usr_input_para_ia = mensagem_conteudo
             
         elif mensagem_tipo == 'audio':
-            instrucao = mensagem_conteudo.get('instrucao')
-            usr_input_para_ia = f"Áudio recebido (URL: {mensagem_conteudo.get('url')}). Usuário disse: [TRANSCRIÇÃO DO WHISPER]. Responda com base na transcrição."
-
-        elif mensagem_tipo in ('image', 'document'):
-            legenda_instrucao = mensagem_conteudo.get('caption')
+            instrucao = mensagem_conteudo.get('instrucao') # 'transcreva este áudio'
+            url = mensagem_conteudo.get('url')
+            # CHAMA O PROCESSADOR DE MÍDIA
+            usr_input_para_ia = processador_midia.processar_audio(url)
             
-            if mensagem_tipo == 'image':
-                usr_input_para_ia = f"IMAGEM recebida (URL: {mensagem_conteudo.get('url')}). INSTRUÇÃO: {legenda_instrucao}"
-            elif mensagem_tipo == 'document':
-                usr_input_para_ia = f"DOCUMENTO recebido ({mensagem_conteudo.get('fileName')}, URL: {mensagem_conteudo.get('url')}). INSTRUÇÃO: {legenda_instrucao}"        
+        elif mensagem_tipo == 'image':
+            instrucao = mensagem_conteudo.get('caption')
+            url = mensagem_conteudo.get('url')
+            # CHAMA O PROCESSADOR DE MÍDIA (Simulação Vision)
+            usr_input_para_ia = processador_midia.processar_imagem(url, instrucao)
+            
+        elif mensagem_tipo == 'document':
+            instrucao = mensagem_conteudo.get('caption')
+            url = mensagem_conteudo.get('url')
+            nome = mensagem_conteudo.get('fileName')
+            usr_input_para_ia = processador_midia.processar_documento(url, nome, instrucao)
+        
         else:
             logger.warning(f"Tipo de mensagem desconhecido: {mensagem_tipo}")
             return {"status": "ok", "message": "Tipo de mensagem não processável."}
@@ -75,10 +90,10 @@ async def evolution_webhook(request: Request):
         contexto = db.get_messages(id_usuario)
         resposta = agente_ronaldo.processar_input(usr_input_para_ia, prompt, contexto) 
         db.adiciona_mensagem(id_usuario, 'user', usr_input_para_ia) 
-        db.adiciona_mensagem(id_usuario, 'assistant', resposta)         
+        db.adiciona_mensagem(id_usuario, 'assistant', resposta)        
         evo_connector.enviar_resposta(numero, resposta)  
 
-        logger.info("Ciclo de webhook completo. Mensagens salvas e resposta enviada.") 
+        logger.info("Ciclo de webhook completo. Mensagens salvas e resposta enviada.")
         return {"status": "ok", "message": "Resposta enviada."}
     except json.JSONDecodeError:
         logger.warning("Corpo da requisição inválido (JSON esperado).")
