@@ -1,5 +1,3 @@
-#5511940804809
-#5511940804809
 import json
 import uvicorn
 import logging
@@ -13,8 +11,17 @@ from fastapi import FastAPI, Request, HTTPException
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-agente_ronaldo = Agente(ope.get_key())
-db = Banco()
+try:
+    agente_ronaldo = Agente(ope.get_key())
+except Exception as e:
+    logger.error(f"Erro ao inicializar Agente (OpenAI): {e}")
+    exit()
+
+try:
+    db = Banco()
+except Exception as e:
+    logger.error(f"Erro ao inicializar Banco (Supabase): {e}")
+    exit()
 
 try:
     evo_connector = EvoConnection()
@@ -37,31 +44,41 @@ async def evolution_webhook(request: Request):
             logger.info(process_data.get('message'))
             return process_data
         
-        mensagem = process_data.get('Mensagem')
+        mensagem_tipo = process_data.get('Tipo')
+        mensagem_conteudo = process_data.get('Conteudo')
         numero = process_data.get('Numero')
         prompt = a_instrucoes.escolhe_prompt(numero)
-        
-        # 1. Busca/Cria o ID do usuário (base para o contexto)
+
         id_usuario = db.busca_id_por_numero(numero)
         if id_usuario is None:
-             raise Exception("Falha ao obter ou criar ID do usuário no Supabase.")
+             logger.error("Falha ao obter ou criar ID do usuário no Supabase.")
+             return {"status": "error", "message": "Falha na base de dados."}
+        
+        if mensagem_tipo == 'text':
+            usr_input_para_ia = mensagem_conteudo
+            
+        elif mensagem_tipo == 'audio':
+            instrucao = mensagem_conteudo.get('instrucao')
+            usr_input_para_ia = f"Áudio recebido (URL: {mensagem_conteudo.get('url')}). Usuário disse: [TRANSCRIÇÃO DO WHISPER]. Responda com base na transcrição."
 
-        # 2. Obtém o contexto de mensagens para o ID
+        elif mensagem_tipo in ('image', 'document'):
+            legenda_instrucao = mensagem_conteudo.get('caption')
+            
+            if mensagem_tipo == 'image':
+                usr_input_para_ia = f"IMAGEM recebida (URL: {mensagem_conteudo.get('url')}). INSTRUÇÃO: {legenda_instrucao}"
+            elif mensagem_tipo == 'document':
+                usr_input_para_ia = f"DOCUMENTO recebido ({mensagem_conteudo.get('fileName')}, URL: {mensagem_conteudo.get('url')}). INSTRUÇÃO: {legenda_instrucao}"        
+        else:
+            logger.warning(f"Tipo de mensagem desconhecido: {mensagem_tipo}")
+            return {"status": "ok", "message": "Tipo de mensagem não processável."}
+
         contexto = db.get_messages(id_usuario)
-        logger.info(f"Contexto do DB obtido (mensagens): {len(contexto)}")
-
-        # 3. Processa a resposta da IA (passando o contexto corrigido)
-        resposta = agente_ronaldo.processar_input(mensagem, prompt, contexto)
-        
-        # 4. Salva as novas mensagens no DB (ordem importa: USER, depois ASSISTANT)
-        db.adiciona_mensagem(id_usuario, 'user', mensagem)
-        db.adiciona_mensagem(id_usuario, 'assistant', resposta)        
-        
-        # 5. Envia a resposta final
+        resposta = agente_ronaldo.processar_input(usr_input_para_ia, prompt, contexto) 
+        db.adiciona_mensagem(id_usuario, 'user', usr_input_para_ia) 
+        db.adiciona_mensagem(id_usuario, 'assistant', resposta)         
         evo_connector.enviar_resposta(numero, resposta)  
 
-        logger.info("Ciclo de webhook completo. Mensagens salvas e resposta enviada.")
-        
+        logger.info("Ciclo de webhook completo. Mensagens salvas e resposta enviada.") 
         return {"status": "ok", "message": "Resposta enviada."}
     except json.JSONDecodeError:
         logger.warning("Corpo da requisição inválido (JSON esperado).")

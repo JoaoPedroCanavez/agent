@@ -13,32 +13,80 @@ class EvoConnection:
         self.EVO_TOKEN = evo.get_token()
 
     async def processar_webhook(self, data: dict):
-    # Verifica se a chave 'data' (que contem a mensagem) existe
         if 'data' not in data:
-            logger.warning("Payload do webhook recebido sem a chave     'data'.")
+            logger.warning("Payload do webhook recebido sem a chave 'data'.")
             return {"status": "ok", "message": "Payload malformado."}
 
-    # A mensagem em si é o dicionário aninhado em 'data'
         message = data['data'] 
-    
-    # 1. Filtra mensagens de SAÍDA (fromMe=True)
+        
         if message.get('key', {}).get('fromMe', False):
             logger.debug("Mensagem ignorada: enviada pela própria instância (fromMe=True).")
-            return {"status": "ok", "message": "Mensagem de saída ignorada."}   
-
-        usr_text = message.get('message', {}).get('conversation') or \
-                message.get('message', {}).get('extendedTextMessage', {}).get('text')
-    
-        if not usr_text:
-            logger.info("Mensagem ignorada: não é um texto simples.")
-            return {"status": "ok", "message": "Não é uma mensagem de texto."}
-
+            return {"status": "ok", "message": "Mensagem de saída ignorada."}
+        
         numero = message.get('key', {}).get('remoteJid', '')       
         f_numero = numero.split('@')[0]
-    
+        
+        usr_text = message.get('message', {}).get('conversation') or \
+                   message.get('message', {}).get('extendedTextMessage', {}).get('text')
+        
+        tipo, conteudo = None, None
 
-        logger.info(f"Mensagem de texto recebida. De: {f_numero}. Texto: '{usr_text[:50]}...'")
-        return {'Mensagem': usr_text, 'Numero': f_numero}
+        if usr_text:
+            tipo = 'text'
+            conteudo = usr_text
+            logger.info(f"Mensagem de texto recebida. De: {f_numero}. Texto: '{usr_text[:50]}...'")
+            
+        elif 'imageMessage' in message.get('message', {}):
+            tipo = 'image'
+            midia_data = message['message']['imageMessage']
+            caption = midia_data.get('caption', '').strip()
+            
+            if not caption:
+                caption = "analise e descreva esta imagem"
+            
+            conteudo = {
+                'caption': caption,
+                'url': midia_data.get('url', 'URL_NAO_DISPONIVEL') 
+            }
+            logger.info(f"Mensagem de imagem recebida. Legenda/Instrução: {conteudo['caption'][:30]}...")
+
+        elif 'audioMessage' in message.get('message', {}):
+            tipo = 'audio'
+            midia_data = message['message']['audioMessage']
+            
+            instrucao = "transcreva este áudio" 
+            
+            conteudo = {
+                'instrucao': instrucao, 
+                'url': midia_data.get('url', 'URL_NAO_DISPONIVEL'),
+                'ptt': midia_data.get('ptt', False) 
+            }
+            logger.info(f"Mensagem de áudio recebida. Instrução: {instrucao}")
+
+        elif 'documentMessage' in message.get('message', {}):
+            tipo = 'document'
+            midia_data = message['message']['documentMessage']
+            caption = midia_data.get('caption', '').strip()
+            
+            if not caption:
+                caption = "extraia o texto e resuma este documento"
+
+            conteudo = {
+                'caption': caption,
+                'fileName': midia_data.get('fileName', 'arquivo'),
+                'mimetype': midia_data.get('mimetype', ''),
+                'url': midia_data.get('url', 'URL_NAO_DISPONIVEL')
+            }
+            logger.info(f"Mensagem de documento/PDF recebida. Instrução: {caption[:30]}...")
+            
+        else:
+            logger.info("Mensagem ignorada: Tipo não suportado ou vazio.")
+            return {"status": "ok", "message": "Tipo de mensagem não suportado."}
+        return {
+            'Tipo': tipo, 
+            'Conteudo': conteudo, 
+            'Numero': f_numero
+        }
 
     
     def enviar_resposta(self, numero: str, resposta: str):
