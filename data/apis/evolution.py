@@ -1,5 +1,3 @@
-# evolution.py
-
 import json
 import requests
 from dotenv import load_dotenv
@@ -20,23 +18,19 @@ class EvoConnection:
             if message.get('key', {}).get('fromMe', False):
                 continue
             
-            # 1. Tenta extrair o texto de diferentes campos
             usr_text = message.get('message', {}).get('conversation') or \
                         message.get('message', {}).get('extendedTextMessage', {}).get('text')
             
             numero = message.get('key', {}).get('remoteJid', '')       
             f_numero = numero.split('@')[0]
             
-            # ---------------------------------------------------------------
-            # 💡 NOVO DEBUG: Vê se o texto foi extraído antes de chamar a IA
+
             print(f"\n--- DEBUG INÍCIO PROCESSAMENTO ---")
             print(f"DEBUG: Mensagem recebida de: {f_numero}")
             print(f"DEBUG: Texto extraído: '{usr_text}'")
-            # ---------------------------------------------------------------
 
-            if usr_text: # Verifica se o texto não é vazio (ou None)
-                
-                # SE VOCÊ CHEGAR AQUI, A IA SERÁ CHAMADA!
+
+            if usr_text: 
                 print("DEBUG: Chamando o Agente OpenAI...")
                 resposta_agente = self.agente.processar_input(usr_text)
                 print("DEBUG: Agente OpenAI respondeu.")
