@@ -1,0 +1,15 @@
+import os
+from dotenv import load_dotenv
+
+
+load_dotenv()
+
+_SUP_KEY = os.getenv("supKey")
+_SUP_INSTANCIA = os.getenv("supIns")
+
+
+def get_key():
+    return _SUP_KEY
+
+def get_instancia():
+    return _SUP_INSTANCIA

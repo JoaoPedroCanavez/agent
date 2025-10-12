@@ -1,25 +1,33 @@
 import logging
 from openai import OpenAI
-
+from typing import List, Dict # Importação para melhor tipagem
 
 logger = logging.getLogger(__name__)
 
 class Agente:
 
-  def __init__(self, key):
+  def __init__(self, key: str):
     self.client =  OpenAI(api_key=key)
   
-  def processar_input(self, usr_text: str, instrucoes = str) -> str:
+  # Adicionada tipagem para clareza
+  def processar_input(self, usr_text: str, instrucoes: str, contexto: List[Dict]) -> str:
     
     logger.info(f"Input do Usuário para o Agente: '{usr_text}'")
     try:
+      # CORREÇÃO: Concatena as listas usando o operador '+'
+      # A ordem é importante: SYSTEM + HISTÓRICO + MENSAGEM ATUAL
       messages = [
           {"role": "system", "content": instrucoes},
-          {"role": "user", "content": usr_text}
       ]
-    
-      logger.debug(f"Enviando para GPT-4o-mini com prompt: '{usr_text}'")
-    
+      
+      # Adiciona o histórico do DB (lista de dicionários)
+      messages += contexto 
+      
+      # Adiciona a mensagem atual do usuário
+      messages.append({"role": "user", "content": usr_text}) 
+      
+      logger.debug(f"Enviando para GPT-4o-mini com {len(messages)} mensagens no contexto.")
+      
       response = self.client.chat.completions.create(
           model="gpt-4o-mini", 
           messages=messages,  
