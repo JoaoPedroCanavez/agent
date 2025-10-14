@@ -1,16 +1,15 @@
-import requests
-import logging
-import io 
-from openai import OpenAI
+import io
+import ffmpeg
 import PyPDF2
-from pydub import AudioSegment
+import logging 
+import requests
+from openai import OpenAI
 from typing import List, Dict, Union
-
 logger = logging.getLogger(__name__)
 #--------------------------------------------------------------------------------------------------------------------#
 class ProcessadorDeMidia:
 #--------------------------------------------------------------------------------------------------------------------#
-    def __init__(self, key: str): # Corrigida a tipagem da chave, se ainda estiver 'key=str'
+    def __init__(self, key: str):
         self.client =  OpenAI(api_key=key)
         self.conversor = ConversorDeFormatos()
 #--------------------------------------------------------------------------------------------------------------------#
@@ -26,15 +25,27 @@ class ProcessadorDeMidia:
             logger.error(f"Falha ao baixar mídia da URL {media_url}: {e}")
             return None
 #--------------------------------------------------------------------------------------------------------------------#
-    def verfica_tipo(self, mensagem: dict) -> str | None:
+    def verfica_tipo(self, mensagem: dict):
         try:
             texto_simples = mensagem.get('conversation') or \
                 mensagem.get('extendedTextMessage', {}).get('text')
             if texto_simples:
                 return texto_simples
             elif mensagem.get('audioMessage'):
-                url_audio = mensagem.get('audioMessage').get('url')
-                return self.transcricao_audio(url_audio)
+                    url_audio = mensagem.get('audioMessage').get('url')
+                    return self.transcricao_audio(url_audio)
+            else:
+                #no momento do desenvolvimento evolution não funciona
+                #ver qual é o data que vem com imagem sem mensage 
+                # e com mensagem e fazer logica para tratar
+                if mensagem.get('imageMessage'):
+                    url_image = mensagem.get('imageMessage').get('url')
+                    return [{"type": "input_text","text": "interprete a imagem enviada"},
+                            {"type": "input_image","image_url": url_image}]
+                elif mensagem.get('pdfMessage'):
+                    url_pdf = mensagem.get('pdfMessage').get('url')
+                    return [{"type": "input_text","text": "leia e faça um resumo do pdf enviado"},
+                            {"type": "input_image","image_url": url_pdf}]
             return None 
         except Exception as e:
             logger.error(f"Erro no Processamento de midia: {e}")
@@ -72,15 +83,35 @@ class ConversorDeFormatos:
     def converter_audio_para_mp3(self, audio_buffer: io.BytesIO, input_format: str) -> io.BytesIO | None:
         try:
             audio_buffer.seek(0)
-            audio = AudioSegment.from_file(audio_buffer, format=input_format)
             mp3_buffer = io.BytesIO()
-            audio.export(mp3_buffer, format="mp3") 
+            (
+                ffmpeg
+                .input('pipe:0', format=input_format)
+                .output('pipe:1', format='mp3', acodec='libmp3lame', loglevel="quiet") 
+                .run(input=audio_buffer.read(), 
+                     capture_stdout=True, 
+                     capture_stderr=True, 
+                     pipe_stdout=True, 
+                     pipe_stderr=True,
+                     overwrite_output=True) 
+            ) 
+            stream = ffmpeg.input('pipe:0', format=input_format)
+            out_stream = stream.output('pipe:1', format='mp3', acodec='libmp3lame')
+            stdout_data, stderr_data = (
+                out_stream
+                .run(input=audio_buffer.getvalue(), capture_stdout=True, capture_stderr=True)
+            )
+            mp3_buffer.write(stdout_data)
             mp3_buffer.seek(0)
-            mp3_buffer.name = "audio_transcodificado.mp3"
-            logger.info(f"Conversão de {input_format} para MP3 concluída.")
+            mp3_buffer.name = "audio.mp3"
+            logger.info(f"Conversão de {input_format} para MP3 concluída usando ffmpeg-python.")
             return mp3_buffer
+        except ffmpeg.Error as e:
+            error_details = e.stderr.decode('utf8')
+            logger.error(f"Falha na transcodificação (ffmpeg-python): {error_details}", exc_info=True)
+            return None
         except Exception as e:
-            logger.error(f"Falha na transcodificação (pydub/FFmpeg): {e}", exc_info=True)
+            logger.error(f"Falha na transcodificação (Erro Genérico): {e}", exc_info=True)
             return None
 #--------------------------------------------------------------------------------------------------------------------#
     def converter_arquivo_para_pdf(self, text_content: str) -> io.BytesIO:
