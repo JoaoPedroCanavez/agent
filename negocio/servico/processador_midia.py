@@ -3,75 +3,85 @@ import logging
 import io 
 from openai import OpenAI
 import PyPDF2
+from pydub import AudioSegment
+from typing import List, Dict, Union
 
 logger = logging.getLogger(__name__)
-
+#--------------------------------------------------------------------------------------------------------------------#
 class ProcessadorDeMidia:
-    def __init__(self, openai_client: OpenAI):
-        self.client = openai_client
-
-    def baixar_midia(self, url: str) -> bytes | None:
+#--------------------------------------------------------------------------------------------------------------------#
+    def __init__(self, key: str): # Corrigida a tipagem da chave, se ainda estiver 'key=str'
+        self.client =  OpenAI(api_key=key)
+        self.conversor = ConversorDeFormatos()
+#--------------------------------------------------------------------------------------------------------------------#
+    def _baixar_midia(self, media_url: str, file_extension: str) -> io.BytesIO | None:
         try:
-            response = requests.get(url, stream=True, timeout=30)
+            response = requests.get(media_url, stream=True, timeout=30)
             response.raise_for_status()
-            logger.info(f"Download da mídia iniciado: {url}")
-            return response.content
+            media_buffer = io.BytesIO(response.content)
+            media_buffer.name = f"arquivo_temp.{file_extension}"  
+            logger.info(f"Download da mídia concluído. Tipo: {file_extension}. Tamanho: {len(response.content)} bytes.")
+            return media_buffer
         except requests.exceptions.RequestException as e:
-            logger.error(f"Falha ao baixar mídia da URL {url}: {e}")
+            logger.error(f"Falha ao baixar mídia da URL {media_url}: {e}")
             return None
-
-    def processar_audio(self, media_url: str) -> str:     
-        audio_content = self.baixar_midia(media_url)
-        if not audio_content:
-            return "Falha na transcrição: não foi possível baixar o arquivo de áudio."
-
+#--------------------------------------------------------------------------------------------------------------------#
+    def verfica_tipo(self, mensagem: dict) -> str | None:
         try:
-            audio_file = io.BytesIO(audio_content)
-            audio_file.name = "audio_temp.mp3" 
-            
-            transcricao = self.client.audio.transcriptions.create(
+            texto_simples = mensagem.get('conversation') or \
+                mensagem.get('extendedTextMessage', {}).get('text')
+            if texto_simples:
+                return texto_simples
+            elif mensagem.get('audioMessage'):
+                url_audio = mensagem.get('audioMessage').get('url')
+                return self.transcricao_audio(url_audio)
+            return None 
+        except Exception as e:
+            logger.error(f"Erro no Processamento de midia: {e}")
+            return None
+#--------------------------------------------------------------------------------------------------------------------#
+    def transcricao_audio(self, audio_url: str) -> str:
+        arq_audio_buffer_ogg = self._baixar_midia(audio_url, "ogg") 
+        if arq_audio_buffer_ogg is None:
+            return "Erro: Não foi possível baixar o arquivo de áudio."
+        mp3_buffer = self.conversor.converter_audio_para_mp3(arq_audio_buffer_ogg, "ogg")    
+        if mp3_buffer is None:
+             return "Erro: Falha ao converter áudio para o formato MP3."
+        try:
+            transcription = self.client.audio.transcriptions.create(
                 model="whisper-1", 
-                file=audio_file
+                file=mp3_buffer, 
+                response_format="text"
             )
-            
-            texto_transcrito = transcricao.text
-            logger.info("Transcrição do áudio bem-sucedida.")
-            return f"TRANSCRIÇÃO DO ÁUDIO: {texto_transcrito}"
+            logger.info("Áudio transcrito com sucesso.")
+            return transcription.text
             
         except Exception as e:
-            logger.error(f"Falha na API Whisper: {e}")
-            return "Falha na transcrição: erro ao processar áudio com a IA."
+            logger.error(f"Erro na API de transcrição Whisper: {e}", exc_info=True)
+            return "Erro: Falha na comunicação com a API de Transcrição."
+#-----------------/-------------------------/-----------------------/-----------------------------/------------------#        
 
 
-    def processar_imagem(self, media_url: str, instrucao: str) -> str:
+
+
+
+
+#-----------------/-------------------------/-----------------------/-----------------------------/------------------# 
+class ConversorDeFormatos:
+#--------------------------------------------------------------------------------------------------------------------#
+    def converter_audio_para_mp3(self, audio_buffer: io.BytesIO, input_format: str) -> io.BytesIO | None:
         try:
-            logger.info(f"Imagem enviada para análise Vision. URL: {media_url}")
-            return f"IMAGEM RECEBIDA (URL: {media_url}). TAREFA: {instrucao}"
-
+            audio_buffer.seek(0)
+            audio = AudioSegment.from_file(audio_buffer, format=input_format)
+            mp3_buffer = io.BytesIO()
+            audio.export(mp3_buffer, format="mp3") 
+            mp3_buffer.seek(0)
+            mp3_buffer.name = "audio_transcodificado.mp3"
+            logger.info(f"Conversão de {input_format} para MP3 concluída.")
+            return mp3_buffer
         except Exception as e:
-            logger.error(f"Falha na API Vision (simulada): {e}")
-            return "Falha na análise da imagem: erro na comunicação com a IA."
-
-
-    def processar_documento(self, media_url: str, nome_arquivo: str, instrucao: str) -> str:        
-        document_content = self.baixar_midia(media_url)
-        if not document_content:
-            return f"Falha na extração de texto: não foi possível baixar o documento '{nome_arquivo}'."
-        
-        if nome_arquivo.lower().endswith('.pdf'):
-            try:
-                reader = PyPDF2.PdfReader(io.BytesIO(document_content))  
-                texto_completo = ""
-                for page in reader.pages:
-                    texto_completo += page.extract_text() or ""
-                texto_limitado = texto_completo[:1500] 
-                logger.info(f"Texto extraído do documento (limite de 1500 caracteres).")
-                
-                return f"DOCUMENTO TEXTO: '{texto_limitado}'. INSTRUÇÃO: {instrucao}"
-                
-            except Exception as e:
-                logger.error(f"Falha na extração de texto do PDF: {e}")
-                return "Falha na extração de texto: erro ao ler o PDF."
-        
-        else:
-            return "Falha na extração: Formato de documento não suportado (apenas PDF é implementado)."
+            logger.error(f"Falha na transcodificação (pydub/FFmpeg): {e}", exc_info=True)
+            return None
+#--------------------------------------------------------------------------------------------------------------------#
+    def converter_arquivo_para_pdf(self, text_content: str) -> io.BytesIO:
+        pass
