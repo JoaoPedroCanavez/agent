@@ -1,8 +1,7 @@
-#5511940804809
-#5511940804809
 import json
 import uvicorn
 import logging
+import sys # Import adicionado para direcionar logs
 from data.apis import ope
 from negocio.servico.db import Banco
 from negocio.servico import a_instrucoes
@@ -10,39 +9,49 @@ from negocio.servico.agente import Agente
 from negocio.servico.tratamento_mensagens import TratamentoMsg 
 from negocio.servico.processador_midia import ProcessadorDeMidia
 from fastapi import FastAPI, Request, HTTPException
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+#--------------------------------------------------------------------------------------------------------------------#
+# CONFIGURAÇÃO DE LOGGING: Direciona explicitamente para a saída padrão
+logging.basicConfig(
+    level=logging.INFO, 
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    stream=sys.stdout # Garante que os logs da aplicação sejam exibidos
+)
 logger = logging.getLogger(__name__)
 #--------------------------------------------------------------------------------------------------------------------#
-#Fazendo a chamada das classes criadas para aplicação
+# Fazendo a chamada das classes criadas para aplicação
 try:
+    logger.info("Inicializando Agente (OpenAI)...")
     agent = Agente(ope.get_key())
 except Exception as e:
     logger.error(f"Erro ao inicializar Agente (OpenAI): {e}")
     exit()
 try:
+    logger.info("Inicializando Banco de Dados (Supabase)...")
     db = Banco()
 except Exception as e:
     logger.error(f"Erro ao inicializar Banco (Supabase): {e}")
     exit()
 try:
+    logger.info("Inicializando Conector de Mensagens (TratamentoMsg)...")
     connector = TratamentoMsg()
 except Exception as e:
-    logger.error(f"Erro ao inicializar EvoConnection: {e}")
+    logger.error(f"Erro ao inicializar Conector de Mensagens: {e}")
     exit()
 try:
+    logger.info("Inicializando Processador de Mídia...")
     processador_midia = ProcessadorDeMidia(ope.get_key()) 
 except Exception as e:
-    logger.error(f"Erro ao inicializar ProcessadorDeMidia: {e}")
+    logger.error(f"Erro ao inicializar Processador de Mídia: {e}")
     exit()
+logger.info("Inicialização de serviços concluída.")
 #--------------------------------------------------------------------------------------------------------------------#
 app = FastAPI()
-#Faz o tratamento dos dados recebidos pelo webhook usando FastAPI
-@app.post("/webhook/message-upsert/messages-upsert")
+@app.post("/messages-upsert")
 async def msg_recebida_webhook(request: Request):
     try:
+        logger.info("Webhook recebido no /messages-upsert. Processando...")
         data = await request.json()
-        #logger.info(f"PAYLOAD BRUTO RECEBIDO: {json.dumps(data, indent=2)}")
-        process_data = await connector.processar_webhook(data,processador_midia)
+        process_data = await connector.processar_webhook(data, processador_midia)
 
         if process_data.get('status') == 'ok':
             logger.info(process_data.get('message'))
@@ -72,7 +81,6 @@ async def msg_recebida_webhook(request: Request):
         
         db.adiciona_mensagem(id_usuario, 'assistant', resposta)         
 
-        #Faz o envio da mensagem e manda log de confirmação
         connector.enviar_resposta(numero, resposta)  
         logger.info("Ciclo de webhook completo. Mensagens salvas e resposta enviada.")
         return {"status": "ok", "message": "Resposta enviada."}
@@ -83,7 +91,6 @@ async def msg_recebida_webhook(request: Request):
         logger.error(f"Erro na camada principal do Webhook: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Erro interno do servidor.")
 #--------------------------------------------------------------------------------------------------------------------#
-#Difine os paramentros para o uso do uvicorn
 if __name__ == "__main__":
     logger.info("Iniciando o servidor Uvicorn...")
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
