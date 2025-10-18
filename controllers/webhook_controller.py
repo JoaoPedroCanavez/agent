@@ -3,13 +3,16 @@ import logging
 import requests
 from config import z
 from config import evo
-from negocio.media_processor import ProcessadorDeMidia
+from services.media_processor import ProcessadorDeMidia
 from typing import Dict, Union, Any, List
-
 logger = logging.getLogger(__name__)
+
+
 #--------------------------------------------------------------------------------------------------------------------#
 class TratamentoMsg:
 #--------------------------------------------------------------------------------------------------------------------#
+
+
     def __init__(self):
         self.EVO_URL = evo.get_url()
         self.EVO_INSTANCIA = evo.get_instancia()
@@ -18,41 +21,37 @@ class TratamentoMsg:
         self.Z_INSTANCIA = z.get_instancia()
         self.Z_TOKEN = z.get_token()
         self.S_Z_TOKEN = z.get_s_token()
+
+
 #--------------------------------------------------------------------------------------------------------------------#
+
+
     async def processar_webhook(self, data: dict, processador_midia: ProcessadorDeMidia):
         
         dados_mapeados = self._mapear_payload(data)
         if dados_mapeados is None:
             return {"status": "ok", "message": "Payload malformado ou mensagem de saída ignorada."}
-        
-        objeto_mensagem = dados_mapeados.get('message', {})
 
-        # A lógica de verificação de tipo (incluindo áudio, imagem e texto)
-        # agora reside exclusivamente em ProcessadorDeMidia.
+        objeto_mensagem = dados_mapeados.get('message', {})
         texto_usuario = processador_midia.verificar_tipo_e_processar(objeto_mensagem)
 
         if texto_usuario is None:
             logger.info("Mensagem ignorada: não é um texto simples ou formato de mídia suportado.")
             return {"status": "ok", "message": "Não é uma mensagem de texto/mídia suportada."}
 
-        # --- Finaliza o Processamento ---
         numero_completo = dados_mapeados.get('remoteJid', '')
         numero = numero_completo.split('@')[0]
-        
-        # Lógica para logar a mensagem, adaptada para strings ou listas de mídia
-        if isinstance(texto_usuario, str):
-            log_texto = texto_usuario[:50]
-        elif isinstance(texto_usuario, list) and texto_usuario and isinstance(texto_usuario[0], dict) and 'text' in texto_usuario[0]:
-            log_texto = texto_usuario[0]['text'][:50]
-        else:
-            log_texto = f"Formato não fatiável ({type(texto_usuario).__name__})"
 
-        logger.info(f"Mensagem recebida. De: {numero}. Texto: '{log_texto}...'")
+        logger.info(f"Mensagem recebida. De: {numero}.")
         return {'Mensagem': texto_usuario, 'Numero': numero}
+    
+
 #--------------------------------------------------------------------------------------------------------------------#
+
+
     def enviar_resposta(self, numero: str, resposta: str):
         
-        # 1. TENTATIVA COM EVOLUTION API (Prioridade/Fallback)
+        # TENTATIVA COM EVOLUTION API
         if self.EVO_URL and self.EVO_INSTANCIA and self.EVO_TOKEN:
             try:
                 logger.info("Tentando enviar via Evolution API.")
@@ -78,7 +77,7 @@ class TratamentoMsg:
         else:
             logger.info("Evolution API não configurada. Tentando Z-API diretamente.")
 
-        # 2. FALLBACK COM Z-API
+        # FALLBACK COM Z-API
         if self.Z_URL and self.Z_INSTANCIA and self.Z_TOKEN:
             try:
                 logger.info("Tentando enviar via Z-API.")
@@ -107,7 +106,11 @@ class TratamentoMsg:
         else:
             logger.error("ERRO CRÍTICO: Evolution e Z-API não configuradas ou falharam no envio.")
             return False
+        
+
 #--------------------------------------------------------------------------------------------------------------------#
+
+
     def _mapear_payload(self, data: dict) -> Union[Dict, None]:
         dados_mensagem: Dict = {}
         objeto_mensagem: Dict = {}
@@ -152,3 +155,5 @@ class TratamentoMsg:
             'message': objeto_mensagem, 
             'remoteJid': jid_remoto,
         }
+    
+#--------------------------------------------------------------------------------------------------------------------#

@@ -1,16 +1,23 @@
 import logging
-from data.apis import sup
+from config import sup
 from supabase import create_client, Client
 from postgrest.exceptions import APIError
 from typing import List, Dict, Union
-
 logger = logging.getLogger(__name__)
+
+
 #--------------------------------------------------------------------------------------------------------------------#
 class Banco:
 #--------------------------------------------------------------------------------------------------------------------#
+
+
     def __init__(self):
         self.client: Client = create_client(sup.get_instancia(), sup.get_key())
+
+
 #--------------------------------------------------------------------------------------------------------------------#
+
+
     def busca_id_por_numero(self, numero: str) -> Union[int, None]:
         try:
             dados_busca = self.client.table('usr').select("id").eq('numero', numero).execute().data
@@ -35,7 +42,11 @@ class Banco:
         except Exception as e:
             logger.error(f"Ocorreu um erro inesperado na inserção: {e}")
             return None
-#--------------------------------------------------------------------------------------------------------------------#    
+        
+
+#--------------------------------------------------------------------------------------------------------------------#  
+
+  
     def get_messages(self, user_id: int) -> List[Dict]:
         try: 
             cnxt_data = (self.client
@@ -55,7 +66,11 @@ class Banco:
         except Exception as e:
             logger.error(f"Erro ao obter contexto do Supabase para ID {user_id}: {e}", exc_info=True)
             return []
+        
+
 #--------------------------------------------------------------------------------------------------------------------#
+
+
     def adiciona_mensagem(self, user_id: int, role: str, mensagem: str):
         try:
             novo_registro_msg = {'usr_id': user_id,'role': role,'msg': mensagem}
@@ -67,4 +82,6 @@ class Banco:
         except Exception as e:
             logger.error(f"Erro ao salvar mensagem no Supabase para ID {user_id}: {e}", exc_info=True)
             return False
+        
+
 #--------------------------------------------------------------------------------------------------------------------#

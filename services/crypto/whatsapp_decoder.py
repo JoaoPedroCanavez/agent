@@ -5,10 +5,14 @@ import base64
 import logging
 from Crypto.Cipher import AES
 from typing import Optional, Dict, Union
-
 logger = logging.getLogger(__name__)
 
+
+#--------------------------------------------------------------------------------------------------------------------#
 class DecodificadorDeMidiaWhatsApp:
+#--------------------------------------------------------------------------------------------------------------------#
+
+
     _APP_INFO: Dict[str, bytes] = {
         "image": b"WhatsApp Image Keys",
         "video": b"WhatsApp Video Keys",
@@ -23,7 +27,11 @@ class DecodificadorDeMidiaWhatsApp:
         "audio": "ogg",
         "document": "bin",
     }
-    
+
+
+#--------------------------------------------------------------------------------------------------------------------#
+
+
     @staticmethod
     def _derivar_chave_hkdf(chave: bytes, tamanho: int, info_app: bytes = b"") -> bytes:
         chave_hkdf = hmac.new(b"\0" * 32, chave, hashlib.sha256).digest()
@@ -39,11 +47,19 @@ class DecodificadorDeMidiaWhatsApp:
             indice_bloco += 1
             fluxo_chave += bloco_chave
         return fluxo_chave[:tamanho]
+    
+
+#--------------------------------------------------------------------------------------------------------------------#
+
 
     @staticmethod
     def _remover_padding_aes(dados: bytes) -> bytes:
         tamanho_padding = dados[len(dados) - 1]
         return dados[:-tamanho_padding]
+    
+
+#--------------------------------------------------------------------------------------------------------------------#
+
 
     @staticmethod
     def _descriptografar_aes(chave: bytes, texto_cifrado: bytes, iv: Optional[bytes]) -> bytes:
@@ -53,7 +69,11 @@ class DecodificadorDeMidiaWhatsApp:
             return DecodificadorDeMidiaWhatsApp._remover_padding_aes(texto_plano)
         except Exception as e:
             raise ValueError(f"Erro na descriptografia AES: {e}")
-    
+        
+
+#--------------------------------------------------------------------------------------------------------------------#
+
+
     def decodificar_buffer(self, 
                            buffer_criptografado: io.BytesIO, 
                            chave_midia_base64: str, 
@@ -87,3 +107,5 @@ class DecodificadorDeMidiaWhatsApp:
         except Exception as e:
             logger.error(f"Falha crítica na decodificação da mídia: {e}")
             raise RuntimeError("Não foi possível decodificar o áudio. Chave ou formato inválido.")
+        
+#--------------------------------------------------------------------------------------------------------------------#

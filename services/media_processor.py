@@ -5,15 +5,18 @@ from openai import OpenAI
 from typing import List, Dict, Union, Any
 import tempfile 
 import os       
-import whisper # Importa a biblioteca Whisper local
-import base64 # Importado para codificação de imagem
-from PIL import Image, UnidentifiedImageError # Importado UnidentifiedImageError
+import whisper
+import base64
+from PIL import Image, UnidentifiedImageError
 from services.crypto.whatsapp_decoder import DecodificadorDeMidiaWhatsApp
-
 logger = logging.getLogger(__name__)
+
+
 #--------------------------------------------------------------------------------------------------------------------#
 class ProcessadorDeMidia:
 #--------------------------------------------------------------------------------------------------------------------#
+
+
     def __init__(self, key: str):
         # A chave da OpenAI ainda é necessária para o Agente, mas não para a transcrição
         self.client =  OpenAI(api_key=key) 
@@ -24,7 +27,11 @@ class ProcessadorDeMidia:
         # Você pode alterar 'base' para 'small', 'medium', etc., dependendo da sua GPU/CPU
         self.modelo_whisper_local = whisper.load_model("base") 
         logger.info("Modelo Whisper local carregado com sucesso.")
+
+
 #--------------------------------------------------------------------------------------------------------------------#
+
+
     def _baixar_midia(self, url_midia: str, extensao_arquivo: str) -> io.BytesIO | None:
         try:
             resposta = requests.get(url_midia, stream=True, timeout=30)
@@ -35,7 +42,11 @@ class ProcessadorDeMidia:
         except requests.exceptions.RequestException as e:
             logger.error(f"Falha ao baixar mídia da URL {url_midia}: {e}")
             return None
+        
+
 #--------------------------------------------------------------------------------------------------------------------#
+
+
     def _processar_criptografia(self, url: str, chave_midia: str, mime_type: str, prompt_text: str) -> List[Dict[str, Any]] | None:
         """Baixa, descriptografa e converte mídia (Imagem/PDF) para Base64 (Data URI)."""
         extensao_download = "midia_bruta" 
@@ -85,7 +96,11 @@ class ProcessadorDeMidia:
         except Exception as e:
             logger.error(f"Erro ao processar mídia criptografada para Base64: {e}", exc_info=True)
             return None
+        
+
 #--------------------------------------------------------------------------------------------------------------------#
+
+
     def verificar_tipo_e_processar(self, mensagem: dict) -> Union[str, List[Dict[str, Any]], None]:     
         try:  
             # 1. Tenta Texto Simples
@@ -133,7 +148,11 @@ class ProcessadorDeMidia:
         except Exception as e:
             logger.error(f"Erro ao verificar e processar o tipo de mensagem: {e}", exc_info=True)
             return None
+        
+
 #--------------------------------------------------------------------------------------------------------------------#
+
+
     def transcricao_audio(self, url_audio: str, chave_midia: str, mime_type: str) -> str | None:
         
         extensao_download = "midia_bruta" 
