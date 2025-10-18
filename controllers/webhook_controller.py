@@ -1,9 +1,9 @@
 import json
 import logging
 import requests
-from data.apis import z
-from data.apis import evo
-from negocio.servico.processador_midia import ProcessadorDeMidia
+from config import z
+from config import evo
+from negocio.media_processor import ProcessadorDeMidia
 from typing import Dict, Union, Any, List
 
 logger = logging.getLogger(__name__)

@@ -2,12 +2,12 @@ import json
 import uvicorn
 import logging
 import sys # Import adicionado para direcionar logs
-from data.apis import ope
-from negocio.servico.db import Banco
-from negocio.servico import a_instrucoes
-from negocio.servico.agente import Agente
-from negocio.servico.tratamento_mensagens import TratamentoMsg 
-from negocio.servico.processador_midia import ProcessadorDeMidia
+from config import ope
+from data.repository.db import Banco
+from services.instructions_prompts import a_instrucoes
+from services.agent_service import Agente
+from controllers.webhook_controller import TratamentoMsg 
+from services.media_processor import ProcessadorDeMidia
 from fastapi import FastAPI, Request, HTTPException
 #--------------------------------------------------------------------------------------------------------------------#
 # CONFIGURAÇÃO DE LOGGING: Direciona explicitamente para a saída padrão
@@ -61,22 +61,25 @@ async def msg_recebida_webhook(request: Request):
         numero = process_data.get('Numero')
         prompt = a_instrucoes.escolhe_prompt(numero)
 
-        if isinstance(mensagem, dict) and 'message' in mensagem:
-            mensagem_para_agente = mensagem.get('message', 'Mensagem vazia')
-        else:
-            mensagem_para_agente = mensagem
-
+        # A variável 'mensagem' já está formatada corretamente pelo processador_midia
+        # (string para texto, list para multimodal). Não é mais necessário o if/else
+        # complexo aqui.
+        mensagem_para_agente = mensagem
+        
         id_usuario = db.busca_id_por_numero(numero)
 
         contexto = db.get_messages(id_usuario)
         logger.info(f"Contexto do DB obtido (mensagens): {len(contexto)}")
         
+        # O agente processa a string ou a lista multimodal
         resposta = agent.processar_input(mensagem_para_agente, prompt, contexto)
         
+        # Lógica de salvar no DB
         if isinstance(mensagem_para_agente, str):
             db.adiciona_mensagem(id_usuario, 'user', mensagem_para_agente)
         else:
-            prompt_de_interpretacao = mensagem_para_agente[0]['text']if isinstance(mensagem_para_agente, list) and mensagem_para_agente else "Mídia enviada"
+            # Para mídia (lista), salva apenas o prompt de interpretação no DB
+            prompt_de_interpretacao = mensagem_para_agente[0]['text'] if isinstance(mensagem_para_agente, list) and mensagem_para_agente else "Mídia enviada para interpretação"
             db.adiciona_mensagem(id_usuario, 'user', prompt_de_interpretacao)
         
         db.adiciona_mensagem(id_usuario, 'assistant', resposta)         
