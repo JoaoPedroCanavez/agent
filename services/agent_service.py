@@ -80,7 +80,6 @@ class Agente:
                 elif item.get("type") == "image_url":
                     user_content.append(item)
         mensagens.append({"role": "user", "content": user_content})
-        logger.info(mensagens) 
         return mensagens
       except Exception as e:
           logger.error(f'Erro: {e}')

@@ -82,12 +82,16 @@ class ProcessadorDeMidia:
             if temp_caminho_entrada and os.path.exists(temp_caminho_entrada):
                 os.remove(temp_caminho_entrada)
 
+#--------------------------------------------------------------------------------------------------------------------#
+    #fazer logica para tratamento de imagem
+    #possivelmente chamar a IA para interpretar a imagem isoladamente primerio depos mandar a interpretação da imagem acompanhada de contexto
+    def interpretar_imagem():
+        pass
 
 #--------------------------------------------------------------------------------------------------------------------#
 
 
-    def _processar_criptografia(self, url: str, chave_midia: str, mime_type: str, prompt_text: str) -> List[Dict[str, Any]] | None:
-        """Baixa, descriptografa e converte mídia (Imagem/PDF) para Base64 (Data URI)."""
+    def _processar_criptografia(self, url: str, chave_midia: str, mime_type: str, prompt_text: str, tipo: str, conteudo: str) -> List[Dict[str, Any]] | None:
         extensao_download = "midia_bruta" 
         buffer_criptografado = self._baixar_midia(url, extensao_download)
         if buffer_criptografado is None:
@@ -110,7 +114,7 @@ class ProcessadorDeMidia:
             logger.info(f"Mídia ({mime_type}) convertida para Base64 (Data URI) para o Agente.")
             return [
                 {"type": "input_text", "text": prompt_text},
-                {"type": "input_image", "image_url": data_uri} 
+                {"type": tipo, conteudo : data_uri} 
             ]
 
         except Exception as e:
@@ -139,8 +143,16 @@ class ProcessadorDeMidia:
                 url_audio = info_audio.get('url')
                 return self.transcricao_audio(url_audio, chave_midia, mime_type)
             
-            # 3. Tenta Imagem (Multimodal)
-            elif mensagem.get('imageMessage'):
+            else:            
+                # 5. Outros tipos de mídia ou não suportado
+                logger.info("Mensagem não é texto ou mídia suportada (áudio, imagem, pdf).")
+                return None 
+            
+            #em produção
+            # 3. Tenta Imagem 
+            '''elif mensagem.get('imageMessage'):
+                tipo = "input_image"
+                conteudo = "image_url"
                 info_img = mensagem.get('imageMessage')
                 url_img = info_img.get('url')
                 chave_midia = info_img.get('mediaKey')
@@ -148,10 +160,12 @@ class ProcessadorDeMidia:
                 prompt_text = "interprete a imagem enviada"
                 
                 logger.info(f"Mensagem identificada como IMAGEM. URL (criptografada): {url_img[:30]}...")
-                return self._processar_criptografia(url_img, chave_midia, mime_type, prompt_text)
-
+                return self._processar_criptografia(url_img, chave_midia, mime_type, prompt_text,tipo,conteudo)
+                
             # 4. Tenta PDF (documentMessage com mimetype PDF)
             elif mensagem.get('documentMessage') and mensagem.get('documentMessage').get('mimetype') == 'application/pdf':
+                tipo = ""
+                conteudo = ""
                 info_doc = mensagem.get('documentMessage')
                 url_doc = info_doc.get('url')
                 chave_midia = info_doc.get('mediaKey')
@@ -160,11 +174,9 @@ class ProcessadorDeMidia:
                 
                 logger.info(f"Mensagem identificada como PDF. URL (criptografada): {url_doc[:30]}...")
                 return self._processar_criptografia(url_doc, chave_midia, mime_type, prompt_text)
-                        
-            # 5. Outros tipos de mídia ou não suportado
-            logger.info("Mensagem não é texto ou mídia suportada (áudio, imagem, pdf).")
-            return None 
+            '''
             
+                
         except Exception as e:
             logger.error(f"Erro ao verificar e processar o tipo de mensagem: {e}", exc_info=True)
             return None
