@@ -18,13 +18,9 @@ class ProcessadorDeMidia:
 
 
     def __init__(self, key: str):
-        # A chave da OpenAI ainda é necessária para o Agente, mas não para a transcrição
         self.client =  OpenAI(api_key=key) 
         self.decodificador = DecodificadorDeMidiaWhatsApp()
-        
-        # Carrega o modelo Whisper localmente apenas uma vez na inicialização
         logger.info("Carregando modelo Whisper local ('base')...")
-        # Você pode alterar 'base' para 'small', 'medium', etc., dependendo da sua GPU/CPU
         self.modelo_whisper_local = whisper.load_model("base") 
         logger.info("Modelo Whisper local carregado com sucesso.")
 
@@ -47,10 +43,53 @@ class ProcessadorDeMidia:
 #--------------------------------------------------------------------------------------------------------------------#
 
 
+    def transcricao_audio(self, url_audio: str, chave_midia: str, mime_type: str) -> str | None:
+        extensao_download = "midia_bruta" 
+        buffer_criptografado = self._baixar_midia(url_audio, extensao_download)
+        if buffer_criptografado is None:
+            return None
+        
+        
+        temp_caminho_entrada = None
+        try:
+            logger.info("Iniciando descriptografia da mídia (AES/HKDF)...")
+            buffer_decodificado = self.decodificador.decodificar_buffer(
+                buffer_criptografado=buffer_criptografado,
+                chave_midia_base64=chave_midia, 
+                mime_type=mime_type
+            )
+            logger.info("Descriptografia concluída. Conteúdo decodificado em buffer.")
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.ogg') as tmp_ogg:
+                buffer_decodificado.seek(0)
+                ogg_content = buffer_decodificado.getvalue()
+                
+                logger.info(f"Salvando OGG decodificado para transcrição local: {len(ogg_content)} bytes.") 
+                tmp_ogg.write(ogg_content)
+                temp_caminho_entrada = tmp_ogg.name
+                tmp_ogg.flush()
+            logger.info("Iniciando transcrição local com modelo Whisper...")
+            resultado = self.modelo_whisper_local.transcribe(
+                temp_caminho_entrada,
+                language="pt" 
+            )
+            transcricao = resultado["text"]
+            logger.info("Transcrição local bem-sucedida (via Whisper local).")
+            return transcricao
+        except Exception as e:
+            logger.error(f"Erro na transcrição com Whisper local: {e}", exc_info=True)
+            return None    
+        finally:
+            if temp_caminho_entrada and os.path.exists(temp_caminho_entrada):
+                os.remove(temp_caminho_entrada)
+
+
+#--------------------------------------------------------------------------------------------------------------------#
+
+
     def _processar_criptografia(self, url: str, chave_midia: str, mime_type: str, prompt_text: str) -> List[Dict[str, Any]] | None:
         """Baixa, descriptografa e converte mídia (Imagem/PDF) para Base64 (Data URI)."""
         extensao_download = "midia_bruta" 
-        buffer_criptografado = self._baixar_midia(url, extensao_download) 
+        buffer_criptografado = self._baixar_midia(url, extensao_download)
         if buffer_criptografado is None:
             return None
         try:
@@ -63,27 +102,8 @@ class ProcessadorDeMidia:
             logger.info("Descriptografia concluída. Conteúdo decodificado em buffer.")
             buffer_decodificado.seek(0)
             dados_decodificados = buffer_decodificado.getvalue()
-            if 'image' in mime_type:
-                logger.info(f"Convertendo imagem decodificada (MIME: {mime_type}) para 'image/jpeg' válido.")
-                JPEG_START_MARKER = b'\xff\xd8\xff'
-                start_index = dados_decodificados.find(JPEG_START_MARKER)
-                if start_index == -1:                   
-                    start_index = 64
-                    logger.warning("Marcador JPEG não encontrado. Assumindo header de 64 bytes (para compatibilidade).")
-                else:
-                    logger.info(f"Marcador JPEG encontrado no índice: {start_index}. Cortando o header.")
-                input_buffer_img = io.BytesIO(dados_decodificados[start_index:])
-                try:
-                    img = Image.open(input_buffer_img)
-                    output_buffer = io.BytesIO()
-                    img.save(output_buffer, format="JPEG")
-                    dados_para_base64 = output_buffer.getvalue()
-                    mime_type = "image/jpeg"
-                except UnidentifiedImageError as e:
-                    logger.error(f"Falha crítica ao identificar imagem mesmo após busca por header: {e}.", exc_info=True)
-                    return None
-            else:
-                dados_para_base64 = dados_decodificados
+
+            dados_para_base64 = dados_decodificados
             base64_dados = base64.b64encode(dados_para_base64).decode('utf-8')
             data_uri = f"data:{mime_type};base64,{base64_dados}"
             
@@ -151,42 +171,3 @@ class ProcessadorDeMidia:
         
 
 #--------------------------------------------------------------------------------------------------------------------#
-
-
-    def transcricao_audio(self, url_audio: str, chave_midia: str, mime_type: str) -> str | None:
-        
-        extensao_download = "midia_bruta" 
-        buffer_criptografado = self._baixar_midia(url_audio, extensao_download) 
-        if buffer_criptografado is None:
-            return None
-        temp_caminho_entrada = None
-        try:
-            logger.info("Iniciando descriptografia da mídia (AES/HKDF)...")
-            buffer_decodificado = self.decodificador.decodificar_buffer(
-                buffer_criptografado=buffer_criptografado,
-                chave_midia_base64=chave_midia, 
-                mime_type=mime_type
-            )
-            logger.info("Descriptografia concluída. Conteúdo decodificado em buffer.")
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.ogg') as tmp_ogg:
-                buffer_decodificado.seek(0)
-                ogg_content = buffer_decodificado.getvalue()
-                
-                logger.info(f"Salvando OGG decodificado para transcrição local: {len(ogg_content)} bytes.") 
-                tmp_ogg.write(ogg_content)
-                temp_caminho_entrada = tmp_ogg.name
-                tmp_ogg.flush()
-            logger.info("Iniciando transcrição local com modelo Whisper...")
-            resultado = self.modelo_whisper_local.transcribe(
-                temp_caminho_entrada,
-                language="pt" 
-            )
-            transcricao = resultado["text"]
-            logger.info("Transcrição local bem-sucedida (via Whisper local).")
-            return transcricao
-        except Exception as e:
-            logger.error(f"Erro na transcrição com Whisper local: {e}", exc_info=True)
-            return None    
-        finally:
-            if temp_caminho_entrada and os.path.exists(temp_caminho_entrada):
-                os.remove(temp_caminho_entrada)

@@ -54,7 +54,7 @@ class Banco:
                          .select('role, msg') 
                          .eq('usr_id', user_id)
                          .order('created_at', desc=True) 
-                         .limit(5) 
+                         .limit(6) 
                          .execute()).data
             cnxt_data.reverse()
             

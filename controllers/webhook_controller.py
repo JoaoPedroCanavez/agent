@@ -26,7 +26,7 @@ class TratamentoMsg:
 #--------------------------------------------------------------------------------------------------------------------#
 
 
-    async def processar_webhook(self, data: dict, processador_midia: ProcessadorDeMidia):
+    async def processar_webhook(self, data: dict, processador_midia: ProcessadorDeMidia) -> List[dict[str]]:
         
         dados_mapeados = self._mapear_payload(data)
         if dados_mapeados is None:
@@ -49,7 +49,7 @@ class TratamentoMsg:
 #--------------------------------------------------------------------------------------------------------------------#
 
 
-    def enviar_resposta(self, numero: str, resposta: str):
+    def enviar_resposta(self, numero: str, resposta: str) -> bool:
         
         # TENTATIVA COM EVOLUTION API
         if self.EVO_URL and self.EVO_INSTANCIA and self.EVO_TOKEN:
@@ -62,22 +62,31 @@ class TratamentoMsg:
                 }    
                 payload = json.dumps({"number": numero, "text": resposta})
 
+
                 response = requests.post(url, headers=headers, data=payload, timeout=10)
                 response.raise_for_status() 
                 logger.info(f"Resposta enviada com sucesso pela Evolution API para {numero}. Status: {response.status_code}")
-                return True 
-                
+                return True  
+            
             except requests.exceptions.RequestException as e:
                 logger.error(f"EVOLUTION FALHOU. Erro: {e}. Detalhes: {getattr(response, 'text', 'N/A')}")
                 logger.warning("Iniciando fallback para Z-API...")
+
             except Exception as e:
                 logger.error(f"Erro inesperado na Evolution API: {e}")
                 logger.warning("Iniciando fallback para Z-API...")
-
         else:
             logger.info("Evolution API não configurada. Tentando Z-API diretamente.")
+        
 
-        # FALLBACK COM Z-API
+        #FALLBACK EM CASO DE ERRO NA EVOLUTION
+        self.fallback_env_res(numero, resposta)
+
+
+#--------------------------------------------------------------------------------------------------------------------#
+
+
+    def fallback_env_res(self, numero: str, resposta: str):
         if self.Z_URL and self.Z_INSTANCIA and self.Z_TOKEN:
             try:
                 logger.info("Tentando enviar via Z-API.")
@@ -88,21 +97,21 @@ class TratamentoMsg:
                 }  
                 payload = json.dumps({"phone": numero, "message": resposta})
 
+
                 response = requests.post(url, headers=headers, data=payload, timeout=10)
                 texto_resposta = response.text 
                 response.raise_for_status() 
-
                 logger.info(f"Resposta enviada com sucesso pela Z-API para {numero}. Status: {response.status_code}")
-                logger.info(f"CORPO DA RESPOSTA Z-API: {texto_resposta}") 
-                return True 
-                
+                logger.info(f"CORPO DA RESPOSTA Z-API: {texto_resposta}")  
+                return True
+               
             except requests.exceptions.RequestException as e:
                 logger.error(f"Z-API TAMBÉM FALHOU. Erro: {e}. Detalhes: {getattr(response, 'text', 'N/A')}")
                 return False 
+            
             except Exception as e:
                 logger.error(f"Erro inesperado na Z-API: {e}")
                 return False
-        
         else:
             logger.error("ERRO CRÍTICO: Evolution e Z-API não configuradas ou falharam no envio.")
             return False
@@ -112,48 +121,51 @@ class TratamentoMsg:
 
 
     def _mapear_payload(self, data: dict) -> Union[Dict, None]:
+
+
         dados_mensagem: Dict = {}
         objeto_mensagem: Dict = {}
-        eh_evolution: bool = False
+        is_evolution: bool = False
         jid_remoto: str = ''
+
         
         # Tenta formato Evolution
         if 'data' in data:
             logger.info(f"Log: Mapeamento Evolution")
             dados_mensagem = data['data']
             objeto_mensagem = dados_mensagem.get('message', {})
-            eh_evolution = True
+            is_evolution = True
+
 
         # Tenta formato Z-API (ou formato alternativo com 'phone' no nível superior)
         elif 'phone' in data:
             logger.info(f"Log: Mapeamento Z-API/Alternativo")
             dados_mensagem = data 
             objeto_mensagem = {'conversation': data.get('text')}
-            eh_evolution = False
-            
         else:
             logger.warning("Payload recebido não corresponde aos formatos Evolution ou Z-API esperados.")
             return None
 
-        # Verifica se a mensagem foi enviada pelo próprio bot (fromMe=True)
-        if eh_evolution:
-             eh_saida = dados_mensagem.get('key', {}).get('fromMe', False)
+
+        # Verifica se a mensagem é saida ou entrada
+        if is_evolution:
+             is_saida = dados_mensagem.get('key', {}).get('fromMe', False)
         else:
-             eh_saida = dados_mensagem.get('fromMe', False) 
-        
-        if eh_saida:
+             is_saida = dados_mensagem.get('fromMe', False) 
+        if is_saida:
             logger.debug(f"Mensagem de saída ignorada.")
             return None
         
+
         # Extrai o JID (número completo)
-        if eh_evolution:
+        if is_evolution:
             jid_remoto = dados_mensagem.get('key', {}).get('remoteJid', '')
         else:
             jid_remoto = dados_mensagem.get('phone', '')
-            
+
+
         return {
             'message': objeto_mensagem, 
             'remoteJid': jid_remoto,
-        }
-    
+        }   
 #--------------------------------------------------------------------------------------------------------------------#
