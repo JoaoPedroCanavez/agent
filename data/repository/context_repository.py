@@ -54,7 +54,7 @@ class Banco:
                          .select('role, msg') 
                          .eq('usr_id', user_id)
                          .order('created_at', desc=True) 
-                         .limit(6) 
+                         .limit(4) # AJUSTADO: Reduzido de 6 para 4 (2 interações) para evitar Rate Limit
                          .execute()).data
             cnxt_data.reverse()
             

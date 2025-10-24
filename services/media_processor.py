@@ -7,7 +7,8 @@ import tempfile
 import os       
 import whisper
 import base64
-from PIL import Image, UnidentifiedImageError
+# PIL não é mais estritamente necessária aqui, mas pode ser útil para futuras verificações
+from PIL import Image, UnidentifiedImageError 
 from services.crypto.whatsapp_decoder import DecodificadorDeMidiaWhatsApp
 logger = logging.getLogger(__name__)
 
@@ -17,12 +18,11 @@ class ProcessadorDeMidia:
 #--------------------------------------------------------------------------------------------------------------------#
 
 
-    def __init__(self, key: str):
+    def __init__(self, key: str, temp_media_dir: str):
         self.client =  OpenAI(api_key=key) 
         self.decodificador = DecodificadorDeMidiaWhatsApp()
-        logger.info("Carregando modelo Whisper local ('base')...")
         self.modelo_whisper_local = whisper.load_model("base") 
-        logger.info("Modelo Whisper local carregado com sucesso.")
+        self.TEMP_MEDIA_DIR = temp_media_dir
 
 
 #--------------------------------------------------------------------------------------------------------------------#
@@ -30,7 +30,7 @@ class ProcessadorDeMidia:
 
     def _baixar_midia(self, url_midia: str, extensao_arquivo: str) -> io.BytesIO | None:
         try:
-            resposta = requests.get(url_midia, stream=True, timeout=30)
+            resposta = requests.get(url_midia, stream=True, timeout=15) 
             resposta.raise_for_status()
             buffer_midia = io.BytesIO(resposta.content)
             logger.info(f"Download da mídia concluído. Tipo: {extensao_arquivo}. Tamanho: {len(resposta.content)} bytes.")
@@ -49,16 +49,15 @@ class ProcessadorDeMidia:
         if buffer_criptografado is None:
             return None
         
-        
         temp_caminho_entrada = None
         try:
-            logger.info("Iniciando descriptografia da mídia (AES/HKDF)...")
+            logger.info("Iniciando descriptografia do áudio (AES/HKDF)...")
             buffer_decodificado = self.decodificador.decodificar_buffer(
                 buffer_criptografado=buffer_criptografado,
                 chave_midia_base64=chave_midia, 
                 mime_type=mime_type
             )
-            logger.info("Descriptografia concluída. Conteúdo decodificado em buffer.")
+            logger.info("Descriptografia do áudio concluída.")
             with tempfile.NamedTemporaryFile(delete=False, suffix='.ogg') as tmp_ogg:
                 buffer_decodificado.seek(0)
                 ogg_content = buffer_decodificado.getvalue()
@@ -82,20 +81,18 @@ class ProcessadorDeMidia:
             if temp_caminho_entrada and os.path.exists(temp_caminho_entrada):
                 os.remove(temp_caminho_entrada)
 
-#--------------------------------------------------------------------------------------------------------------------#
-    #fazer logica para tratamento de imagem
-    #possivelmente chamar a IA para interpretar a imagem isoladamente primerio depos mandar a interpretação da imagem acompanhada de contexto
-    def interpretar_imagem():
-        pass
 
 #--------------------------------------------------------------------------------------------------------------------#
 
 
-    def _processar_criptografia(self, url: str, chave_midia: str, mime_type: str, prompt_text: str, tipo: str, conteudo: str) -> List[Dict[str, Any]] | None:
+    def _processar_criptografia(self, url: str, chave_midia: str, mime_type: str, prompt_text: str | None, tipo: str, conteudo: str) -> List[Dict[str, Any]] | None:
         extensao_download = "midia_bruta" 
         buffer_criptografado = self._baixar_midia(url, extensao_download)
         if buffer_criptografado is None:
             return None
+        
+        temp_caminho_midia = None
+
         try:
             logger.info("Iniciando descriptografia da mídia (AES/HKDF)...")
             buffer_decodificado = self.decodificador.decodificar_buffer(
@@ -105,20 +102,35 @@ class ProcessadorDeMidia:
             )
             logger.info("Descriptografia concluída. Conteúdo decodificado em buffer.")
             buffer_decodificado.seek(0)
-            dados_decodificados = buffer_decodificado.getvalue()
-
-            dados_para_base64 = dados_decodificados
-            base64_dados = base64.b64encode(dados_para_base64).decode('utf-8')
-            data_uri = f"data:{mime_type};base64,{base64_dados}"
+            extensao = self.decodificador._EXTENSAO.get(mime_type.split("/")[0], mime_type.split("/")[-1])
+            if mime_type == 'application/pdf':
+               extensao = 'pdf'
+            elif 'image' in mime_type:
+                if extensao == 'bin': 
+                    extensao = 'jpg' 
             
-            logger.info(f"Mídia ({mime_type}) convertida para Base64 (Data URI) para o Agente.")
-            return [
-                {"type": "input_text", "text": prompt_text},
-                {"type": tipo, conteudo : data_uri} 
-            ]
+            nome_arquivo = f"{os.urandom(16).hex()}.{extensao}"
+            temp_caminho_midia = os.path.join(self.TEMP_MEDIA_DIR, nome_arquivo)
+            
+            logger.info(f"Salvando binário descriptografado diretamente como .{extensao}...")
+
+            with open(temp_caminho_midia, 'wb') as f:
+                f.write(buffer_decodificado.getvalue())
+                 
+            logger.info(f"Mídia salva localmente para ser enviada via path: {temp_caminho_midia}")
+
+            payload_final = []
+            if prompt_text:
+                 payload_final.append({"type": "input_text", "text": prompt_text})
+            payload_final.append({"type": "input_file", "file_path" : temp_caminho_midia})
+            
+            return payload_final
 
         except Exception as e:
-            logger.error(f"Erro ao processar mídia criptografada para Base64: {e}", exc_info=True)
+            logger.error(f"Erro ao processar mídia criptografada para arquivo local: {e}", exc_info=True)
+            # Limpeza em caso de erro
+            if temp_caminho_midia and os.path.exists(temp_caminho_midia):
+                os.remove(temp_caminho_midia)
             return None
         
 
@@ -127,14 +139,12 @@ class ProcessadorDeMidia:
 
     def verificar_tipo_e_processar(self, mensagem: dict) -> Union[str, List[Dict[str, Any]], None]:     
         try:  
-            # 1. Tenta Texto Simples
             texto_simples = mensagem.get('conversation') or \
                 mensagem.get('extendedTextMessage', {}).get('text')
             if texto_simples:
                 logger.info("Mensagem identificada como TEXTO.")
                 return texto_simples
-            
-            # 2. Tenta Áudio
+
             elif mensagem.get('audioMessage', {}):
                 info_audio = mensagem.get('audioMessage', {})
                 logger.info("Mensagem identificada como ÁUDIO. Iniciando transcrição.")
@@ -143,39 +153,50 @@ class ProcessadorDeMidia:
                 url_audio = info_audio.get('url')
                 return self.transcricao_audio(url_audio, chave_midia, mime_type)
             
-            else:            
-                # 5. Outros tipos de mídia ou não suportado
-                logger.info("Mensagem não é texto ou mídia suportada (áudio, imagem, pdf).")
-                return None 
-            
-            #em produção
-            # 3. Tenta Imagem 
-            '''elif mensagem.get('imageMessage'):
-                tipo = "input_image"
-                conteudo = "image_url"
+            elif mensagem.get('imageMessage'):
+                tipo = "input_file" 
+                conteudo = "file_path" 
                 info_img = mensagem.get('imageMessage')
                 url_img = info_img.get('url')
                 chave_midia = info_img.get('mediaKey')
                 mime_type = info_img.get('mimetype')
-                prompt_text = "interprete a imagem enviada"
+
+                texto_acompanhante = info_img.get('caption') 
+
+                if texto_acompanhante:
+                    prompt_text = texto_acompanhante
+                    logger.info(f"Imagem com caption detectado: '{texto_acompanhante[:50]}...'")
+                else:
+                    prompt_text = "interprete a imagem enviada"
+                    logger.info("Imagem sem caption. Usando prompt padrão.")
                 
                 logger.info(f"Mensagem identificada como IMAGEM. URL (criptografada): {url_img[:30]}...")
-                return self._processar_criptografia(url_img, chave_midia, mime_type, prompt_text,tipo,conteudo)
-                
-            # 4. Tenta PDF (documentMessage com mimetype PDF)
+
+                return self._processar_criptografia(url_img, chave_midia, mime_type, prompt_text, tipo, conteudo)
             elif mensagem.get('documentMessage') and mensagem.get('documentMessage').get('mimetype') == 'application/pdf':
-                tipo = ""
-                conteudo = ""
+                tipo = "input_file" 
+                conteudo = "file_path"
                 info_doc = mensagem.get('documentMessage')
                 url_doc = info_doc.get('url')
                 chave_midia = info_doc.get('mediaKey')
                 mime_type = info_doc.get('mimetype')
-                prompt_text = "leia e faça um resumo do pdf enviado"
+
+                texto_acompanhante = info_doc.get('caption')
+
+                if texto_acompanhante:
+                    prompt_text = texto_acompanhante
+                    logger.info(f"PDF com caption detectado: '{texto_acompanhante[:50]}...'")
+                else:
+                    prompt_text = "leia e faça um resumo do pdf enviado"
+                    logger.info("PDF sem caption. Usando prompt padrão.")
                 
                 logger.info(f"Mensagem identificada como PDF. URL (criptografada): {url_doc[:30]}...")
-                return self._processar_criptografia(url_doc, chave_midia, mime_type, prompt_text)
-            '''
-            
+                return self._processar_criptografia(url_doc, chave_midia, mime_type, prompt_text, tipo, conteudo)
+
+            else:            
+
+                logger.info("Mensagem não é texto ou mídia suportada (áudio, imagem, pdf).")
+                return None
                 
         except Exception as e:
             logger.error(f"Erro ao verificar e processar o tipo de mensagem: {e}", exc_info=True)
